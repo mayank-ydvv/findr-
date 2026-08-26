@@ -1,0 +1,18 @@
+[
+  {
+    "email": "demo1@findr.local",
+    "kind": "lost",
+    "photo": "earbuds-case-1.jpg",
+    "description": "Black Boat Airdopes case with a small sticker on the lid",
+    "zone": "Engineering Block",
+    "minutesAgo": 40
+  },
+  {
+    "email": "demo2@findr.local",
+    "kind": "found",
+    "photo": "earbuds-case-2.jpg",
+    "description": "Black wireless earbuds case, found near the food court",
+    "zone": "Food Court",
+    "minutesAgo": 16
+  }
+]
