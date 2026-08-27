@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Marker } from "@vis.gl/react-google-maps";
+import { Marker, useApiIsLoaded } from "@vis.gl/react-google-maps";
 import type { ReportKind } from "@/lib/types";
 
 const COLORS: Record<ReportKind, { fill: string; ring: string }> = {
@@ -45,12 +45,21 @@ export default function ReportPin({
 }) {
   const markerRef = useRef<google.maps.Marker | null>(null);
   const glyph = (pin.category ?? "?").slice(0, 1).toUpperCase();
+  // pinIcon() calls `new google.maps.Size/Point`, which only exist once the
+  // Maps script has loaded. <Map> renders its children immediately, before
+  // that script necessarily has — so without this gate, the very first pin
+  // rendered throws `ReferenceError: google is not defined` and takes the
+  // whole map down with it. Skipping the marker for one render, then
+  // re-rendering with the real icon once loaded, costs nothing visible.
+  const apiLoaded = useApiIsLoaded();
 
   useEffect(() => {
     if (pin.isNew && markerRef.current) {
       markerRef.current.setAnimation(google.maps.Animation.DROP);
     }
   }, [pin.isNew]);
+
+  if (!apiLoaded) return null;
 
   return (
     <Marker

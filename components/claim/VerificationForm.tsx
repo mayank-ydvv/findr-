@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, X } from "lucide-react";
 
 interface PerQuestionResult {
   question: string;
@@ -21,6 +22,8 @@ export default function VerificationForm({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<PerQuestionResult[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
+  const [lockedOut, setLockedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
@@ -36,9 +39,19 @@ export default function VerificationForm({
         }),
       });
       const json = await res.json();
+      if (res.status === 429) {
+        // Attempt ceiling reached — see MAX_VERIFICATION_ATTEMPTS. Counted
+        // per (claimant, match), so opening another claim won't reset it.
+        setLockedOut(true);
+        setAttemptsLeft(0);
+        throw new Error(json.error ?? "Too many attempts");
+      }
       if (!res.ok) throw new Error(json.error ?? "Verification failed");
 
       setResult(json.per_question);
+      if (typeof json.attempts_remaining === "number") {
+        setAttemptsLeft(json.attempts_remaining);
+      }
       if (json.verified) {
         onVerified(json.pickup_location ?? null);
       } else {
@@ -53,43 +66,55 @@ export default function VerificationForm({
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <h3 className="font-medium text-white">Answer to verify ownership</h3>
-      <p className="text-sm text-neutral-500">
+      <h3 className="font-medium text-fg">Answer to verify ownership</h3>
+      <p className="text-sm text-fg-muted">
         These are based on details visible only in the found item&apos;s photo.
       </p>
 
       {questions.map((question, i) => (
         <div key={i}>
-          <label className="mb-1 block text-sm text-neutral-300">{question}</label>
+          <label className="mb-1 block text-sm text-fg">{question}</label>
           <input
             required
             value={answers[i]}
             onChange={(e) =>
               setAnswers((prev) => prev.map((a, idx) => (idx === i ? e.target.value : a)))
             }
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+            className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-fg outline-none focus:border-found"
           />
           {result && (
-            <p className={`mt-1 text-xs ${result[i]?.correct ? "text-emerald-400" : "text-red-400"}`}>
-              {result[i]?.correct ? "✓" : "✗"} {result[i]?.note}
+            <p
+              className={`mt-1 flex items-start gap-1.5 text-xs ${
+                result[i]?.correct ? "text-found" : "text-danger"
+              }`}
+            >
+              {result[i]?.correct ? (
+                <Check className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+              ) : (
+                <X className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+              )}
+              <span>{result[i]?.note}</span>
             </p>
           )}
         </div>
       ))}
 
-      {failed && (
-        <p className="rounded-md bg-red-950 px-3 py-2 text-sm text-red-300">
-          That doesn&apos;t quite match — you can try again.
+      {failed && !lockedOut && (
+        <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+          That doesn&apos;t quite match
+          {attemptsLeft !== null && attemptsLeft > 0
+            ? ` — ${attemptsLeft} attempt${attemptsLeft === 1 ? "" : "s"} remaining.`
+            : " — you can try again."}
         </p>
       )}
-      {error && <p className="rounded-md bg-red-950 px-3 py-2 text-sm text-red-300">{error}</p>}
+      {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
       <button
         type="submit"
-        disabled={submitting}
-        className="w-full rounded-md bg-emerald-500 py-2 text-sm font-semibold text-neutral-950 hover:bg-emerald-400 disabled:opacity-50"
+        disabled={submitting || lockedOut}
+        className="w-full rounded-md bg-accent py-2 text-sm font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-50"
       >
-        {submitting ? "Checking…" : "Verify"}
+        {lockedOut ? "No attempts remaining" : submitting ? "Checking…" : "Verify"}
       </button>
     </form>
   );

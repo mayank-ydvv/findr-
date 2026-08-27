@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { MAX_VERIFICATION_ATTEMPTS, VERIFICATION_ENABLED } from "@/lib/scoring";
 
 const BodySchema = z.object({ match_id: z.string().uuid() });
 
@@ -58,6 +59,27 @@ export async function POST(request: Request) {
     );
   }
 
+  // The real chokepoint for verification attempts. A failed verification
+  // rejects the claim and returns the match to 'suggested', so without this
+  // the claimant could simply open claim after claim and keep guessing —
+  // which is why the ceiling is per (claimant, match), not per claim.
+  const { count: spentAttempts } = await admin
+    .from("claims")
+    .select("id", { count: "exact", head: true })
+    .eq("match_id", match.id)
+    .eq("claimant_id", user.id)
+    .eq("state", "rejected");
+
+  if (VERIFICATION_ENABLED && (spentAttempts ?? 0) >= MAX_VERIFICATION_ATTEMPTS) {
+    return NextResponse.json(
+      {
+        error: "Too many verification attempts for this item. Contact the campus desk instead.",
+        attempts_remaining: 0,
+      },
+      { status: 429 },
+    );
+  }
+
   const { data: secrets, error: secretsError } = await admin
     .from("report_secrets")
     .select("verification_questions")
@@ -77,7 +99,10 @@ export async function POST(request: Request) {
       match_id: match.id,
       claimant_id: user.id,
       holder_id: foundReport.user_id,
-      state: "pending",
+      // With verification off the claim is born settled, so the chat's RLS
+      // insert policy passes and the thread is usable immediately.
+      state: VERIFICATION_ENABLED ? "pending" : "verified",
+      verified_at: VERIFICATION_ENABLED ? null : new Date().toISOString(),
     })
     .select("id, state, created_at")
     .single();
@@ -95,5 +120,9 @@ export async function POST(request: Request) {
     secrets.verification_questions as { question: string; expected_answer: string }[]
   ).map((q) => ({ question: q.question }));
 
-  return NextResponse.json({ claim, questions });
+  return NextResponse.json({
+    claim,
+    questions,
+    attempts_remaining: MAX_VERIFICATION_ATTEMPTS - (spentAttempts ?? 0),
+  });
 }

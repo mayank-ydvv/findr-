@@ -28,9 +28,9 @@ export default function AnalysisProgress({ active }: { active: boolean }) {
   if (!active) return null;
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
-      <span className="h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-400" />
-      <span className="text-sm text-neutral-300">{STAGES[stage]}</span>
+    <div className="flex items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3">
+      <span className="h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-line-strong border-t-accent-hover" />
+      <span className="text-sm text-fg">{STAGES[stage]}</span>
     </div>
   );
 }

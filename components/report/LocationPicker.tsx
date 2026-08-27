@@ -8,7 +8,9 @@ export interface LatLng {
   lng: number;
 }
 
-const DEFAULT_CENTER: LatLng = { lat: 37.4293, lng: -122.169 };
+// Keep in sync with CAMPUS_CENTER in components/map/CampusMap.tsx — SRM
+// Institute of Science and Technology, Kattankulathur (Potheri, Chennai).
+const DEFAULT_CENTER: LatLng = { lat: 12.8252, lng: 80.0476 };
 
 export default function LocationPicker({
   value,
@@ -35,7 +37,7 @@ export default function LocationPicker({
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     return (
-      <p className="rounded-md border border-neutral-800 bg-neutral-900 p-3 text-xs text-neutral-500">
+      <p className="rounded-md border border-line bg-surface p-3 text-xs text-fg-muted">
         Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to pick a location on the map.
       </p>
     );
@@ -45,7 +47,7 @@ export default function LocationPicker({
 
   return (
     <div>
-      <div className="h-56 w-full overflow-hidden rounded-lg border border-neutral-800">
+      <div className="h-56 w-full overflow-hidden rounded-lg border border-line">
         <APIProvider apiKey={apiKey}>
           <Map
             defaultCenter={center}
@@ -66,7 +68,7 @@ export default function LocationPicker({
           </Map>
         </APIProvider>
       </div>
-      <p className="mt-1.5 text-xs text-neutral-500">
+      <p className="mt-1.5 text-xs text-fg-muted">
         Tap the map or drag the pin to the exact spot.
       </p>
     </div>

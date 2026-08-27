@@ -44,8 +44,12 @@ export default function ReportPage() {
     e.preventDefault();
     setError(null);
 
-    if (!photo) {
-      setError("Add a photo of the item.");
+    if (!photo && kind === "found") {
+      setError("Add a photo of the item you found.");
+      return;
+    }
+    if (!photo && description.trim().length < 10) {
+      setError("Without a photo, describe the item in a bit more detail.");
       return;
     }
     if (!location) {
@@ -59,7 +63,7 @@ export default function ReportPage() {
     form.set("user_description", description);
     form.set("lat", String(location.lat));
     form.set("lng", String(location.lng));
-    form.set("photo", photo);
+    if (photo) form.set("photo", photo);
 
     try {
       const res = await fetch("/api/reports", { method: "POST", body: form });
@@ -77,34 +81,31 @@ export default function ReportPage() {
 
   if (!supabaseReady) {
     return (
-      <p className="flex-1 p-8 text-center text-sm text-neutral-500">
+      <p className="flex-1 p-8 text-center text-sm text-fg-muted">
         Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to sign in and report items.
       </p>
     );
   }
 
   if (!signedIn) {
+    // proxy.ts provisions an anonymous session on every request, so this
+    // means that failed rather than that the visitor needs to sign in.
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-neutral-400">Sign in to report a lost or found item.</p>
-        <Link
-          href="/login"
-          className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-neutral-950 hover:bg-emerald-400"
-        >
-          Sign in
-        </Link>
-      </div>
+      <p className="flex-1 p-8 text-center text-sm text-fg-muted">
+        Couldn&apos;t start a session. If this persists, check that anonymous sign-ins are
+        enabled in your Supabase project (Authentication → Sign In / Providers → Anonymous).
+      </p>
     );
   }
 
   if (result) {
     return (
       <div className="mx-auto w-full max-w-lg space-y-4 p-6">
-        <div className="rounded-lg border border-emerald-900 bg-emerald-950/40 p-5">
-          <h2 className="text-lg font-semibold text-white">Report submitted</h2>
-          <p className="mt-1 text-sm text-neutral-400">
+        <div className="rounded-lg border border-found/40 bg-found-soft p-5">
+          <h2 className="text-lg font-semibold text-fg">Report submitted</h2>
+          <p className="mt-1 text-sm text-fg-muted">
             Identified as{" "}
-            <span className="text-neutral-200">
+            <span className="text-fg">
               {result.report.primary_color} {result.report.category}
             </span>
             .{" "}
@@ -121,13 +122,13 @@ export default function ReportPage() {
         <div className="flex gap-3">
           <Link
             href="/matches"
-            className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-neutral-950 hover:bg-emerald-400"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover"
           >
             View matches
           </Link>
           <Link
-            href="/"
-            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-300 hover:border-neutral-500"
+            href="/map"
+            className="rounded-md border border-line-strong px-4 py-2 text-sm text-fg hover:border-fg-subtle"
           >
             Back to map
           </Link>
@@ -139,9 +140,10 @@ export default function ReportPage() {
   return (
     <form onSubmit={handleSubmit} className="mx-auto w-full max-w-lg space-y-5 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-white">Report an item</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          A photo and a rough location are all Findr needs to start looking for a match.
+        <h1 className="text-xl font-semibold text-fg">Report an item</h1>
+        <p className="mt-1 text-sm text-fg-muted">
+          A rough location and either a photo or a description are all Findr needs to
+          start looking for a match.
         </p>
       </div>
 
@@ -154,9 +156,9 @@ export default function ReportPage() {
             className={`flex-1 rounded-lg border py-2.5 text-sm font-semibold capitalize transition-colors ${
               kind === k
                 ? k === "lost"
-                  ? "border-amber-500 bg-amber-950/40 text-amber-300"
-                  : "border-emerald-500 bg-emerald-950/40 text-emerald-300"
-                : "border-neutral-800 text-neutral-500 hover:border-neutral-600"
+                  ? "border-lost bg-lost-soft text-lost"
+                  : "border-found bg-found-soft text-found"
+                : "border-line text-fg-muted hover:border-fg-subtle"
             }`}
           >
             I {k === "lost" ? "lost" : "found"} something
@@ -165,13 +167,25 @@ export default function ReportPage() {
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-neutral-400">Photo</label>
+        <label className="mb-1.5 block text-xs font-medium text-fg-muted">
+          Photo{" "}
+          {kind === "lost" ? (
+            <span className="text-fg-subtle">(optional — describe it instead if you have none)</span>
+          ) : (
+            <span className="text-fg-subtle">(required)</span>
+          )}
+        </label>
         <PhotoUpload onChange={setPhoto} />
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-neutral-400">
-          Description <span className="text-neutral-600">(optional — AI fills in the rest)</span>
+        <label className="mb-1.5 block text-xs font-medium text-fg-muted">
+          Description{" "}
+          <span className="text-fg-subtle">
+            {!photo && kind === "lost"
+              ? "(required — it's all Findr has to match on)"
+              : "(optional — AI fills in the rest)"}
+          </span>
         </label>
         <textarea
           value={description}
@@ -179,25 +193,25 @@ export default function ReportPage() {
           rows={2}
           maxLength={1000}
           placeholder='e.g. "black Boat earbuds case with a small sticker on the lid"'
-          className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+          className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-fg outline-none focus:border-accent"
         />
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-neutral-400">
+        <label className="mb-1.5 block text-xs font-medium text-fg-muted">
           Where was it {kind}?
         </label>
         <LocationPicker value={location} onChange={setLocation} />
       </div>
 
-      {error && <p className="rounded-md bg-red-950 px-3 py-2 text-sm text-red-300">{error}</p>}
+      {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
       <AnalysisProgress active={submitting} />
 
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-md bg-emerald-500 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-emerald-400 disabled:opacity-50"
+        className="w-full rounded-md bg-accent py-2.5 text-sm font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-50"
       >
         {submitting ? "Analysing…" : "Submit report"}
       </button>

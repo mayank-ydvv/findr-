@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { PublicReport } from "@/lib/types";
+import { VERIFICATION_ENABLED } from "@/lib/scoring";
 
 /**
  * The one narrow, server-mediated read of report_secrets outside ingest:
@@ -72,6 +73,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
   }
 
+  // Once a claim is settled the exact pickup spot is no longer secret from
+  // its two participants. With verification disabled a claim is settled the
+  // moment it's opened, so this is the only place the location now surfaces
+  // — /verify used to return it and nothing calls that route any more.
+  let pickupLocation: { lat: number; lng: number } | null = null;
+  const claimIsLive = VERIFICATION_ENABLED
+    ? claim.state === "verified"
+    : claim.state !== "rejected";
+  if (claimIsLive && match?.found_report_id) {
+    const { data: exact } = await admin
+      .from("reports")
+      .select("exact_lat, exact_lng")
+      .eq("id", match.found_report_id)
+      .single();
+    if (exact) pickupLocation = { lat: exact.exact_lat, lng: exact.exact_lng };
+  }
+
   return NextResponse.json({
     claim: {
       id: claim.id,
@@ -83,5 +101,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     questions,
     lostReport,
     foundReport,
+    pickupLocation,
   });
 }

@@ -8,7 +8,7 @@ import type { MatchCandidate, ReportKind } from "./types";
 interface ReportForMatching {
   id: string;
   kind: ReportKind;
-  photo_path: string;
+  photo_path: string | null;
   user_description: string;
   canonical_text: string | null;
   display_lat: number;
@@ -69,8 +69,23 @@ export async function scanForMatches(reportId: string): Promise<{
     );
   }
 
-  const publicUrl = (path: string) =>
-    supabase.storage.from("report-photos").getPublicUrl(path).data.publicUrl;
+  // Pairs someone already dismissed must not come back. The upsert below
+  // would otherwise reset their state to "suggested" on the next scan, so
+  // they're filtered out here — which also skips paying for a rerank call
+  // on a pair whose result would be discarded anyway.
+  const { data: existingMatches } = await supabase
+    .from("matches")
+    .select("lost_report_id, found_report_id, state")
+    .or(`lost_report_id.eq.${reportId},found_report_id.eq.${reportId}`);
+
+  const rejectedPairs = new Set(
+    (existingMatches ?? [])
+      .filter((m) => m.state === "rejected")
+      .map((m) => `${m.lost_report_id}:${m.found_report_id}`),
+  );
+
+  const publicUrl = (path: string | null) =>
+    path ? supabase.storage.from("report-photos").getPublicUrl(path).data.publicUrl : null;
 
   let matchesCreated = 0;
 
@@ -81,13 +96,20 @@ export async function scanForMatches(reportId: string): Promise<{
     const lost = target.kind === "lost" ? target : candidateReport;
     const found = target.kind === "lost" ? candidateReport : target;
 
+    if (rejectedPairs.has(`${lost.id}:${found.id}`)) continue;
+
+    // The found side always has a photo (enforced at ingest and by the
+    // reports_found_requires_photo constraint); the lost side may not.
+    const foundImageUrl = publicUrl(found.photo_path);
+    if (!foundImageUrl) continue;
+
     const rerank = await rerankMatch({
       lost: {
         imageUrl: publicUrl(lost.photo_path),
         canonicalText: lost.canonical_text ?? lost.user_description,
       },
       found: {
-        imageUrl: publicUrl(found.photo_path),
+        imageUrl: foundImageUrl,
         canonicalText: found.canonical_text ?? found.user_description,
       },
     });

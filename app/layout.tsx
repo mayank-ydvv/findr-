@@ -1,46 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import { createClient } from "@/lib/supabase/server";
 import Nav from "@/components/Nav";
+import MatchAlertsProvider from "@/components/match/MatchAlerts";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
   title: "Findr — Campus Lost & Found",
-  description: "AI-powered lost & found for your campus, on a live map.",
+  description:
+    "Report a lost or found item on campus and let Findr's AI search for the match — on a live map of SRM Kattankulathur.",
 };
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
-  // Every page renders through this layout, including the ones with their
-  // own "set your env vars" message — so this can't unconditionally require
-  // Supabase to be configured, or nothing would ever get far enough to show
-  // those messages.
-  let userEmail: string | null = null;
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    userEmail = user?.email ?? null;
-  }
-
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-neutral-950 text-neutral-100">
-        <Nav userEmail={userEmail} />
-        <main className="flex-1 flex flex-col min-h-0">{children}</main>
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col bg-bg text-fg">
+        <MatchAlertsProvider>
+          <Nav />
+          <main className="flex-1 flex flex-col min-h-0">{children}</main>
+        </MatchAlertsProvider>
       </body>
     </html>
   );

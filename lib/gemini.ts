@@ -3,10 +3,12 @@ import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import { z } from "zod";
 import { ITEM_CATEGORIES } from "./types";
 
-/** gemini-2.5-flash: stable, well-established multimodal + JSON-schema
- * support. Swap to a newer flash model if you want — the calling code here
- * doesn't depend on anything model-specific. */
-const MODEL = "gemini-2.5-flash";
+/** gemini-2.5-flash was retired for new API keys ("no longer available to
+ * new users" — confirmed via the actual API error when this broke every
+ * report submission). gemini-3.6-flash is Google's own suggested
+ * replacement. Swap freely — the calling code here doesn't depend on
+ * anything model-specific. */
+const MODEL = "gemini-3.6-flash";
 
 let _client: GoogleGenAI | null = null;
 /** Constructed lazily, on first real use — building it at module scope logs
@@ -31,6 +33,10 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
 }
 
 const ItemExtractionSchema = z.object({
+  /** Gate: is this actually a photo of a losable physical object? Rides on
+   * the vision call that already happens, so screening costs nothing extra. */
+  is_reportable_item: z.boolean(),
+  rejection_reason: z.string().nullable(),
   category: z.enum(ITEM_CATEGORIES),
   primary_color: z.string(),
   secondary_colors: z.array(z.string()),
@@ -49,6 +55,8 @@ export type ItemExtraction = z.infer<typeof ItemExtractionSchema>;
 const ITEM_EXTRACTION_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
+    is_reportable_item: { type: Type.BOOLEAN },
+    rejection_reason: { type: Type.STRING, nullable: true },
     category: { type: Type.STRING, enum: [...ITEM_CATEGORIES] },
     primary_color: { type: Type.STRING },
     secondary_colors: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -76,6 +84,8 @@ const ITEM_EXTRACTION_RESPONSE_SCHEMA: Schema = {
     },
   },
   required: [
+    "is_reportable_item",
+    "rejection_reason",
     "category",
     "primary_color",
     "secondary_colors",
@@ -93,26 +103,60 @@ const ITEM_EXTRACTION_RESPONSE_SCHEMA: Schema = {
  * matching, plus proof-of-ownership questions derived from the same photo.
  */
 export async function extractItemAttributes(params: {
-  imageBase64: string;
-  imageMediaType: "image/jpeg" | "image/png" | "image/webp";
+  /** Absent for a photoless lost report — the description carries it alone. */
+  imageBase64?: string | null;
+  imageMediaType?: "image/jpeg" | "image/png" | "image/webp";
   userDescription: string;
   kind: "lost" | "found";
 }): Promise<ItemExtraction> {
   const { imageBase64, imageMediaType, userDescription, kind } = params;
+  const hasPhoto = Boolean(imageBase64 && imageMediaType);
 
   const response = await client().models.generateContent({
     model: MODEL,
     contents: [
-      { inlineData: { data: imageBase64, mimeType: imageMediaType } },
+      ...(hasPhoto
+        ? [{ inlineData: { data: imageBase64!, mimeType: imageMediaType! } }]
+        : []),
       {
         text:
-          `This is a photo of a ${kind} item on a college campus. ` +
+          (hasPhoto
+            ? `This is a photo of a ${kind} item on a college campus. `
+            : `Someone lost an item on a college campus and has no photo of it. ` +
+              `Work from their description alone — infer only what it actually ` +
+              `supports, and leave brand or visible_text null rather than guessing. `) +
           `Reporter's own description: "${userDescription || "(none provided)"}".\n\n` +
+          (hasPhoto
+            ? `First, screen the photo. Set is_reportable_item false, with a short `+
+          `user-facing rejection_reason, if it is not a photograph of a physical `+
+          `object someone could lose and someone else could hand back — for `+
+          `example a selfie or photo centred on a person, a blank `+
+          `wall or floor, or anything sexual, graphic, or targeting an individual. `+
+          `When you reject, still fill the remaining fields with your best guess `+
+          `so the response stays schema-valid; they will be discarded.\n\n`
+            : `There is no photo to screen — set is_reportable_item true and `+
+              `rejection_reason null unless the description itself is abusive `+
+              `or clearly not about a lost object.\n\n`) +
           `Extract its attributes for a lost-and-found matching system, and write ` +
-          `3 proof-of-ownership verification questions that only someone who actually ` +
-          `owns (if lost) or is holding (if found) this exact item could answer correctly ` +
-          `— base them on specific visible details (stickers, scuffs, engravings, contents), ` +
-          `never on the color/category alone since that's public information.`,
+          `3 proof-of-ownership verification questions.\n\n` +
+          `The test for a good question: could a stranger who has merely seen this ` +
+          `same product model answer it? If yes, it is worthless. Ask only about ` +
+          `traits unique to THIS individual unit — things that happened to it or ` +
+          `were added to it after it left the factory:\n` +
+          `- stickers, tags, keychains, charms, or other add-ons\n` +
+          `- scratches, dents, cracks, wear patterns, discolouration\n` +
+          `- handwriting, name labels, engravings, doodles\n` +
+          `- what is inside it, or what was attached to it\n\n` +
+          `Never ask about factory-uniform traits, which are identical across every ` +
+          `unit of the model and prove nothing:\n` +
+          `- the capitalisation, font, or styling of any brand name or printed text\n` +
+          `- where a logo, label, or printed text sits on the body or case\n` +
+          `- the item's colour, shape, material, or product category\n` +
+          `- standard ports, buttons, seams, or hinges\n\n` +
+          `If the photo shows no unit-specific detail worth asking about, ask about ` +
+          `something only the owner would know that isn't visible at all (what was ` +
+          `inside, where they last used it) rather than falling back to a ` +
+          `factory-uniform trait.`,
       },
     ],
     config: {
@@ -156,12 +200,13 @@ const RERANK_RESPONSE_SCHEMA: Schema = {
  * inlineData, so this fetches each photo first.
  */
 export async function rerankMatch(params: {
-  lost: { imageUrl: string; canonicalText: string };
+  /** imageUrl is null when the owner reported the loss without a photo. */
+  lost: { imageUrl: string | null; canonicalText: string };
   found: { imageUrl: string; canonicalText: string };
 }): Promise<RerankResult> {
   const { lost, found } = params;
   const [lostImage, foundImage] = await Promise.all([
-    fetchImageAsBase64(lost.imageUrl),
+    lost.imageUrl ? fetchImageAsBase64(lost.imageUrl) : Promise.resolve(null),
     fetchImageAsBase64(found.imageUrl),
   ]);
 
@@ -169,16 +214,23 @@ export async function rerankMatch(params: {
     model: MODEL,
     contents: [
       { text: "LOST item — reported description: " + lost.canonicalText },
-      { inlineData: lostImage },
+      ...(lostImage ? [{ inlineData: lostImage }] : []),
       { text: "FOUND item — reported description: " + found.canonicalText },
       { inlineData: foundImage },
       {
         text:
-          "Are these two reports describing the same physical object? Look past " +
-          "differences in angle, lighting, and background. Call out specific matching " +
-          "or conflicting visual details (stickers, scuffs, engravings, wear patterns, " +
-          "hardware shape) rather than just color/category, since those were already " +
-          "used to shortlist this pair.",
+          lostImage
+            ? "Are these two reports describing the same physical object? Look past " +
+              "differences in angle, lighting, and background. Call out specific matching " +
+              "or conflicting visual details (stickers, scuffs, engravings, wear patterns, " +
+              "hardware shape) rather than just color/category, since those were already " +
+              "used to shortlist this pair."
+            : "The lost report has no photo — only the description above. Judge whether " +
+              "the found item in the photo could be the object described. Be more " +
+              "conservative than with two photos: a description can only corroborate " +
+              "details it actually mentions, so treat unmentioned features as unknown " +
+              "rather than as agreement, and keep confidence lower unless the " +
+              "description names something distinctive that the photo clearly shows.",
       },
     ],
     config: {

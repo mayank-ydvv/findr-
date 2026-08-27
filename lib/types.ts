@@ -38,7 +38,7 @@ export interface PublicReport {
   user_id: string;
   kind: ReportKind;
   status: ReportStatus;
-  photo_path: string;
+  photo_path: string | null;
   user_description: string;
   category: string | null;
   primary_color: string | null;

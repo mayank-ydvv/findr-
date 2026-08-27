@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Polyline, useMap } from "@vis.gl/react-google-maps";
+import { Polyline, useApiIsLoaded, useMap } from "@vis.gl/react-google-maps";
 
 export interface ArcEndpoints {
   matchId: string;
@@ -19,6 +19,11 @@ export interface ArcEndpoints {
 export default function MatchArc({ arc }: { arc: ArcEndpoints }) {
   const map = useMap();
   const polylineRef = useRef<google.maps.Polyline | null>(null);
+  // Same reasoning as ReportPin's apiLoaded gate: the `icons` prop below
+  // reads google.maps.SymbolPath directly during render, which only exists
+  // once the Maps script has loaded. A match arriving in the instant before
+  // that finishes would otherwise crash the map.
+  const apiLoaded = useApiIsLoaded();
 
   useEffect(() => {
     if (!map) return;
@@ -49,6 +54,8 @@ export default function MatchArc({ arc }: { arc: ArcEndpoints }) {
 
     return () => window.clearInterval(interval);
   }, [arc.matchId]);
+
+  if (!apiLoaded) return null;
 
   return (
     <Polyline

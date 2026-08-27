@@ -1,9 +1,9 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import VerificationForm from "@/components/claim/VerificationForm";
+import { VERIFICATION_ENABLED } from "@/lib/scoring";
 import AnonChat from "@/components/claim/AnonChat";
 
 interface ClaimData {
@@ -15,6 +15,7 @@ interface ClaimData {
   questions: { question: string }[];
   lostReport: { category: string | null; primary_color: string | null } | null;
   foundReport: { category: string | null; primary_color: string | null } | null;
+  pickupLocation: { lat: number; lng: number } | null;
 }
 
 export default function ClaimPage({ params }: { params: Promise<{ id: string }> }) {
@@ -47,6 +48,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
         if (!res.ok) throw new Error(json.error ?? "Could not load claim");
         setData(json);
         setVerified(json.claim.state === "verified");
+        if (json.pickupLocation) setPickupLocation(json.pickupLocation);
       })
       .catch((err) => setLoadError((err as Error).message));
   }, [claimId, checkingAuth, userId]);
@@ -54,21 +56,18 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
   if (checkingAuth) return null;
 
   if (!userId) {
+    // proxy.ts provisions an anonymous session on every request, so this
+    // means that failed rather than that the visitor needs to sign in.
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-neutral-400">Sign in to view this claim.</p>
-        <Link
-          href="/login"
-          className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-neutral-950 hover:bg-emerald-400"
-        >
-          Sign in
-        </Link>
-      </div>
+      <p className="p-8 text-center text-sm text-fg-muted">
+        Couldn&apos;t start a session. If this persists, check that anonymous sign-ins are
+        enabled in your Supabase project (Authentication → Sign In / Providers → Anonymous).
+      </p>
     );
   }
 
   if (loadError) {
-    return <p className="p-8 text-center text-sm text-red-400">{loadError}</p>;
+    return <p className="p-8 text-center text-sm text-danger">{loadError}</p>;
   }
 
   if (!data) return null;
@@ -80,15 +79,19 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
   return (
     <div className="mx-auto w-full max-w-lg space-y-5 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-white capitalize">{itemLabel}</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          {data.claim.isClaimant
-            ? "Verify a few details to confirm this item is yours."
-            : "Someone believes this found item is theirs and is verifying ownership."}
+        <h1 className="text-xl font-semibold text-fg capitalize">{itemLabel}</h1>
+        <p className="mt-1 text-sm text-fg-muted">
+          {VERIFICATION_ENABLED
+            ? data.claim.isClaimant
+              ? "Verify a few details to confirm this item is yours."
+              : "Someone believes this found item is theirs and is verifying ownership."
+            : data.claim.isClaimant
+              ? "You've claimed this item — message the finder below to arrange a handoff."
+              : "Someone has claimed this item. Message them below to arrange a handoff."}
         </p>
       </div>
 
-      {!verified && data.claim.isClaimant && data.questions.length > 0 && (
+      {VERIFICATION_ENABLED && !verified && data.claim.isClaimant && data.questions.length > 0 && (
         <VerificationForm
           claimId={claimId}
           questions={data.questions.map((q) => q.question)}
@@ -99,24 +102,33 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
         />
       )}
 
-      {!verified && !data.claim.isClaimant && (
-        <p className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 text-sm text-neutral-400">
+      {VERIFICATION_ENABLED && !verified && !data.claim.isClaimant && (
+        <p className="rounded-lg border border-line bg-surface p-4 text-sm text-fg-muted">
           Waiting for the claimant to answer verification questions.
         </p>
       )}
 
       {verified && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-emerald-900 bg-emerald-950/40 p-4">
-            <p className="font-medium text-emerald-300">Ownership verified</p>
+          <div className="rounded-lg border border-found/40 bg-found-soft p-4">
+            <p className="font-medium text-found">
+              {VERIFICATION_ENABLED ? "Ownership verified" : "Claim opened"}
+            </p>
             {pickupLocation && (
-              <p className="mt-1 text-sm text-neutral-400">
+              <p className="mt-1 text-sm text-fg-muted">
                 Exact pickup location: {pickupLocation.lat.toFixed(5)},{" "}
                 {pickupLocation.lng.toFixed(5)}
               </p>
             )}
           </div>
-          <AnonChat claimId={claimId} userId={userId} />
+          <div className="h-96">
+            <AnonChat
+              claimId={claimId}
+              userId={userId}
+              viewerIsHolder={!data.claim.isClaimant}
+              claimState={data.claim.state}
+            />
+          </div>
         </div>
       )}
     </div>

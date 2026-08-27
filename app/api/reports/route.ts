@@ -49,44 +49,69 @@ export async function POST(request: Request) {
     );
   }
 
+  const { kind, user_description, lat, lng, occurred_at } = parsedFields.data;
+
   const photo = form.get("photo");
-  if (!(photo instanceof File)) {
-    return NextResponse.json({ error: "Missing photo" }, { status: 400 });
+  const hasPhoto = photo instanceof File;
+
+  // Found reports still require a photo: the finder is holding the item, and
+  // report_secrets' verification questions are generated from the found
+  // photo — without one there is no proof-of-ownership check to run.
+  if (!hasPhoto && kind === "found") {
+    return NextResponse.json(
+      { error: "A photo is required when reporting an item you found." },
+      { status: 400 },
+    );
   }
-  if (!ACCEPTED_TYPES.includes(photo.type as AcceptedType)) {
+  // A photoless lost report has nothing but its description, so that becomes
+  // the required field instead — otherwise there is literally nothing to
+  // embed or match on.
+  if (!hasPhoto && user_description.trim().length < 10) {
+    return NextResponse.json(
+      {
+        error:
+          "Without a photo, please describe the item in a bit more detail so Findr has something to match on.",
+      },
+      { status: 400 },
+    );
+  }
+  if (hasPhoto && !ACCEPTED_TYPES.includes(photo.type as AcceptedType)) {
     return NextResponse.json(
       { error: `Photo must be one of: ${ACCEPTED_TYPES.join(", ")}` },
       { status: 400 },
     );
   }
 
-  const { kind, user_description, lat, lng, occurred_at } = parsedFields.data;
-  const mediaType = photo.type as AcceptedType;
-  const photoBytes = Buffer.from(await photo.arrayBuffer());
-  const photoBase64 = photoBytes.toString("base64");
+  const mediaType = hasPhoto ? (photo.type as AcceptedType) : null;
+  const photoBytes = hasPhoto ? Buffer.from(await photo.arrayBuffer()) : null;
+  const photoBase64 = photoBytes ? photoBytes.toString("base64") : null;
 
-  // 1. Upload photo. Uses the user-scoped client so the storage RLS policy
-  // (foldername[1] = auth.uid()) is satisfied naturally.
-  const extension = mediaType.split("/")[1];
-  const photoPath = `${user.id}/${crypto.randomUUID()}.${extension}`;
+  // 1. Upload photo, when there is one. Uses the user-scoped client so the
+  // storage RLS policy (foldername[1] = auth.uid()) is satisfied naturally.
+  let photoPath: string | null = null;
+  if (photoBytes && mediaType) {
+    const extension = mediaType.split("/")[1];
+    photoPath = `${user.id}/${crypto.randomUUID()}.${extension}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("report-photos")
-    .upload(photoPath, photoBytes, { contentType: mediaType });
+    const { error: uploadError } = await supabase.storage
+      .from("report-photos")
+      .upload(photoPath, photoBytes, { contentType: mediaType });
 
-  if (uploadError) {
-    return NextResponse.json(
-      { error: `Photo upload failed: ${uploadError.message}` },
-      { status: 500 },
-    );
+    if (uploadError) {
+      return NextResponse.json(
+        { error: `Photo upload failed: ${uploadError.message}` },
+        { status: 500 },
+      );
+    }
   }
 
-  // 2. Vision extraction — attributes + proof-of-ownership questions.
+  // 2. Extraction — attributes plus, when there's a photo, proof-of-ownership
+  // questions. Falls back to the description alone for a photoless report.
   let extraction;
   try {
     extraction = await extractItemAttributes({
       imageBase64: photoBase64,
-      imageMediaType: mediaType,
+      imageMediaType: mediaType ?? undefined,
       userDescription: user_description,
       kind,
     });
@@ -97,12 +122,28 @@ export async function POST(request: Request) {
     );
   }
 
+  // 2b. Moderation gate. Rejecting here — after the vision call that already
+  // happened, but before the Voyage embedding and any DB write — means junk
+  // and abuse cost one API call instead of two plus a row. The orphaned
+  // upload is removed so the bucket doesn't accumulate rejected photos.
+  if (!extraction.is_reportable_item) {
+    if (photoPath) await supabase.storage.from("report-photos").remove([photoPath]);
+    return NextResponse.json(
+      {
+        error:
+          extraction.rejection_reason ??
+          "That photo doesn't look like a lost or found item. Try a clear photo of the object itself.",
+      },
+      { status: 422 },
+    );
+  }
+
   // 3. Multimodal embedding — the cross-modal fingerprint used for matching.
   let embedding: number[];
   try {
     embedding = await embedReport({
       imageBase64: photoBase64,
-      imageMediaType: mediaType,
+      imageMediaType: mediaType ?? undefined,
       canonicalText: extraction.canonical_text,
     });
   } catch (err) {

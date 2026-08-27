@@ -1,28 +1,55 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Base surfaces — slate-derived, tuned to sit beneath a dark campus map
+     without the UI and the map competing for the same value range. */
+  --color-bg: #0f172a;
+  --color-surface: #192134;
+  --color-elevated: #212c42;
+  --color-fg: #ffffff;
+  --color-fg-muted: #94a3b8;
+  --color-fg-subtle: #64748b;
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-line-strong: rgba(255, 255, 255, 0.16);
+
+  /* Brand action. Deliberately NOT green: "found" is a semantic state in
+     this product, so a green CTA would read as a found-item badge. Blue
+     keeps "the app wants you to click this" separate from "this item was
+     found". */
+  --color-accent: #2563eb;
+  --color-accent-hover: #3b82f6;
+  --color-accent-soft: rgba(37, 99, 235, 0.14);
+  --color-on-accent: #ffffff;
+
+  /* Semantic report kinds — used identically on pins, badges, and cards. */
+  --color-lost: #f59e0b;
+  --color-lost-soft: rgba(245, 158, 11, 0.12);
+  --color-found: #10b981;
+  --color-found-soft: rgba(16, 185, 129, 0.12);
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.12);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--color-bg);
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus everywhere — several controls sit on top of the map, where
+   a default outline can disappear against imagery. */
+:focus-visible {
+  outline: 2px solid var(--color-accent-hover);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -32,5 +59,6 @@ body {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

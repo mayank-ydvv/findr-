@@ -21,6 +21,31 @@ export const DIRECTIONAL_TIME_GATE_HOURS = 2;
  * at all — it stays a discarded candidate rather than a low-confidence one. */
 export const MATCH_CONFIDENCE_THRESHOLD = 60;
 
+/**
+ * Proof-of-ownership verification is switched off for now — claiming a match
+ * opens the conversation directly instead of gating it behind questions.
+ *
+ * Nothing has been deleted to achieve this: the questions are still generated
+ * at ingest and stored in report_secrets, /api/claims/[id]/verify still
+ * grades answers, and VerificationForm still works. Flipping this back to
+ * true re-enables the whole flow.
+ *
+ * What genuinely changes while it's false: anyone who claims a match reaches
+ * the finder and the exact pickup location without proving anything. That is
+ * the trade being made deliberately, not an oversight.
+ */
+export const VERIFICATION_ENABLED = false;
+
+/**
+ * How many times one person may attempt verification against a single match.
+ *
+ * Counted per (claimant, match) rather than per claim on purpose: a failed
+ * verification sets the claim to 'rejected' and hands the match back to
+ * 'suggested', and nothing stops the same person opening a fresh claim.
+ * A per-claim counter would therefore limit nothing at all.
+ */
+export const MAX_VERIFICATION_ATTEMPTS = 3;
+
 export function confidenceLabel(confidence: number): "strong" | "possible" | "weak" {
   if (confidence >= 85) return "strong";
   if (confidence >= MATCH_CONFIDENCE_THRESHOLD) return "possible";

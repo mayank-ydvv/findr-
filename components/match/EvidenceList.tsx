@@ -1,3 +1,5 @@
+import { Check, TriangleAlert } from "lucide-react";
+
 export default function EvidenceList({
   matching,
   conflicting,
@@ -8,17 +10,19 @@ export default function EvidenceList({
   if (matching.length === 0 && conflicting.length === 0) return null;
 
   return (
-    <ul className="space-y-1 text-sm">
+    <ul className="space-y-1.5 text-sm">
       {matching.map((feature, i) => (
-        <li key={`m-${i}`} className="flex items-start gap-2 text-emerald-300">
-          <span className="mt-0.5">✓</span>
+        <li key={`m-${i}`} className="flex items-start gap-2 text-found">
+          <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>{feature}</span>
+          <span className="sr-only">(matching detail)</span>
         </li>
       ))}
       {conflicting.map((feature, i) => (
-        <li key={`c-${i}`} className="flex items-start gap-2 text-amber-300">
-          <span className="mt-0.5">!</span>
+        <li key={`c-${i}`} className="flex items-start gap-2 text-lost">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>{feature}</span>
+          <span className="sr-only">(conflicting detail)</span>
         </li>
       ))}
     </ul>

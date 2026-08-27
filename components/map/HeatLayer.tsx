@@ -20,80 +20,101 @@ export interface HeatPoint {
  * dependency: Maps calls draw() automatically on every pan/zoom, so this
  * only has to re-render its own canvas, not manage viewport math by hand
  * beyond what OverlayView already hands it.
+ *
+ * The class body references `google.maps.OverlayView`, which only exists
+ * once the Maps JS script has actually loaded. Defining it at module scope
+ * would evaluate that reference at import time — before the script has
+ * necessarily loaded — and throw `ReferenceError: google is not defined`.
+ * So the class is built lazily, on first use inside the effect below, by
+ * which point `map` (from useMap()) is only ever non-null once the script
+ * has genuinely finished loading.
  */
-class CanvasHeatmapOverlay extends google.maps.OverlayView {
-  private readonly canvas = document.createElement("canvas");
-  private points: HeatPoint[] = [];
+type CanvasHeatmapOverlay = google.maps.OverlayView & {
+  setPoints(points: HeatPoint[]): void;
+};
 
-  constructor() {
-    super();
-    Object.assign(this.canvas.style, {
-      position: "absolute",
-      pointerEvents: "none",
-    });
-  }
+let OverlayClass: (new () => CanvasHeatmapOverlay) | null = null;
 
-  setPoints(points: HeatPoint[]) {
-    this.points = points;
-    this.draw();
-  }
+function getOverlayClass(): new () => CanvasHeatmapOverlay {
+  if (OverlayClass) return OverlayClass;
 
-  override onAdd() {
-    this.getPanes()?.overlayLayer.appendChild(this.canvas);
-  }
+  class Impl extends google.maps.OverlayView {
+    private readonly canvas = document.createElement("canvas");
+    private points: HeatPoint[] = [];
 
-  override onRemove() {
-    this.canvas.remove();
-  }
+    constructor() {
+      super();
+      Object.assign(this.canvas.style, {
+        position: "absolute",
+        pointerEvents: "none",
+      });
+    }
 
-  override draw() {
-    const projection = this.getProjection();
-    const map = this.getMap();
-    const bounds = map && "getBounds" in map ? (map as google.maps.Map).getBounds() : null;
-    if (!projection || !bounds) return;
+    setPoints(points: HeatPoint[]) {
+      this.points = points;
+      this.draw();
+    }
 
-    const ne = projection.fromLatLngToDivPixel(bounds.getNorthEast());
-    const sw = projection.fromLatLngToDivPixel(bounds.getSouthWest());
-    if (!ne || !sw) return;
+    override onAdd() {
+      this.getPanes()?.overlayLayer.appendChild(this.canvas);
+    }
 
-    const left = Math.min(ne.x, sw.x);
-    const top = Math.min(ne.y, sw.y);
-    const width = Math.max(1, Math.abs(ne.x - sw.x));
-    const height = Math.max(1, Math.abs(ne.y - sw.y));
+    override onRemove() {
+      this.canvas.remove();
+    }
 
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.style.left = `${left}px`;
-    this.canvas.style.top = `${top}px`;
-    this.canvas.style.width = `${width}px`;
-    this.canvas.style.height = `${height}px`;
-    this.canvas.width = width * dpr;
-    this.canvas.height = height * dpr;
+    override draw() {
+      const projection = this.getProjection();
+      const map = this.getMap();
+      const bounds = map && "getBounds" in map ? (map as google.maps.Map).getBounds() : null;
+      if (!projection || !bounds) return;
 
-    const ctx = this.canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    ctx.globalCompositeOperation = "lighter";
+      const ne = projection.fromLatLngToDivPixel(bounds.getNorthEast());
+      const sw = projection.fromLatLngToDivPixel(bounds.getSouthWest());
+      if (!ne || !sw) return;
 
-    for (const point of this.points) {
-      const px = projection.fromLatLngToDivPixel(new google.maps.LatLng(point.lat, point.lng));
-      if (!px) continue;
-      const x = px.x - left;
-      const y = px.y - top;
-      const radius = 46;
-      const alpha = Math.min(0.55, 0.18 + point.weight * 0.5);
+      const left = Math.min(ne.x, sw.x);
+      const top = Math.min(ne.y, sw.y);
+      const width = Math.max(1, Math.abs(ne.x - sw.x));
+      const height = Math.max(1, Math.abs(ne.y - sw.y));
 
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
-      gradient.addColorStop(0, `rgba(217, 164, 65, ${alpha})`);
-      gradient.addColorStop(0.55, `rgba(214, 92, 43, ${alpha * 0.5})`);
-      gradient.addColorStop(1, "rgba(214, 92, 43, 0)");
+      const dpr = window.devicePixelRatio || 1;
+      this.canvas.style.left = `${left}px`;
+      this.canvas.style.top = `${top}px`;
+      this.canvas.style.width = `${width}px`;
+      this.canvas.style.height = `${height}px`;
+      this.canvas.width = width * dpr;
+      this.canvas.height = height * dpr;
 
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
+      const ctx = this.canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = "lighter";
+
+      for (const point of this.points) {
+        const px = projection.fromLatLngToDivPixel(new google.maps.LatLng(point.lat, point.lng));
+        if (!px) continue;
+        const x = px.x - left;
+        const y = px.y - top;
+        const radius = 46;
+        const alpha = Math.min(0.55, 0.18 + point.weight * 0.5);
+
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+        gradient.addColorStop(0, `rgba(217, 164, 65, ${alpha})`);
+        gradient.addColorStop(0.55, `rgba(214, 92, 43, ${alpha * 0.5})`);
+        gradient.addColorStop(1, "rgba(214, 92, 43, 0)");
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
+
+  OverlayClass = Impl;
+  return Impl;
 }
 
 /** Must render as a child of <Map> so useMap() resolves to the map instance. */
@@ -103,7 +124,7 @@ export default function HeatLayer({ points, visible }: { points: HeatPoint[]; vi
 
   useEffect(() => {
     if (!map) return;
-    const overlay = new CanvasHeatmapOverlay();
+    const overlay = new (getOverlayClass())();
     overlay.setMap(map);
     overlayRef.current = overlay;
     return () => {

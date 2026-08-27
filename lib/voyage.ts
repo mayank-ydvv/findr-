@@ -51,18 +51,22 @@ async function embed(content: MultimodalContent[], inputType: "query" | "documen
  * this is indexed content being stored, not a search query.
  */
 export async function embedReport(params: {
-  imageBase64: string; // raw base64, no data: prefix
-  imageMediaType: "image/jpeg" | "image/png" | "image/webp";
+  imageBase64?: string | null; // raw base64, no data: prefix
+  imageMediaType?: "image/jpeg" | "image/png" | "image/webp";
   canonicalText: string;
 }): Promise<number[]> {
-  return embed(
-    [
-      { type: "text", text: params.canonicalText },
-      {
-        type: "image_base64",
-        image_base64: `data:${params.imageMediaType};base64,${params.imageBase64}`,
-      },
-    ],
-    "document",
-  );
+  const { imageBase64, imageMediaType, canonicalText } = params;
+
+  // Text-only is a first-class case, not a degraded one: a photoless lost
+  // report embeds its description into the same space a photo would occupy,
+  // which is exactly what makes description→photo matching work at all.
+  const content: MultimodalContent[] = [{ type: "text", text: canonicalText }];
+  if (imageBase64 && imageMediaType) {
+    content.push({
+      type: "image_base64",
+      image_base64: `data:${imageMediaType};base64,${imageBase64}`,
+    });
+  }
+
+  return embed(content, "document");
 }

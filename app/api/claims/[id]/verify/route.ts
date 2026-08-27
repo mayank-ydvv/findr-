@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { gradeVerificationAnswers } from "@/lib/gemini";
+import { MAX_VERIFICATION_ATTEMPTS } from "@/lib/scoring";
 
 const BodySchema = z.object({
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).length(3),
@@ -52,12 +53,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { data: match, error: matchError } = await admin
     .from("matches")
-    .select("found_report_id")
+    .select("lost_report_id, found_report_id")
     .eq("id", claim.match_id)
     .single();
 
   if (matchError || !match) {
     return NextResponse.json({ error: "Match not found" }, { status: 500 });
+  }
+
+  // Attempts are counted across every claim this person has opened on this
+  // match, not just the current one — see MAX_VERIFICATION_ATTEMPTS. Only
+  // settled claims count as spent attempts; the row being verified right now
+  // is still 'pending' and is the attempt in progress.
+  const { count: spentAttempts } = await admin
+    .from("claims")
+    .select("id", { count: "exact", head: true })
+    .eq("match_id", claim.match_id)
+    .eq("claimant_id", user.id)
+    .eq("state", "rejected");
+
+  if ((spentAttempts ?? 0) >= MAX_VERIFICATION_ATTEMPTS) {
+    return NextResponse.json(
+      {
+        error: "Too many verification attempts for this item. Contact the campus desk instead.",
+        attempts_remaining: 0,
+      },
+      { status: 429 },
+    );
   }
 
   const { data: secrets, error: secretsError } = await admin
@@ -90,14 +112,41 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .eq("id", claimId);
 
   if (!grading.all_correct) {
-    return NextResponse.json({ verified: false, per_question: grading.per_question });
+    // Hand the match back to "suggested". Without this it would sit at
+    // "claim_requested" forever with its claim already rejected — a dead
+    // end where the owner can neither retry the claim nor dismiss the
+    // match, just a permanent "verification pending" message.
+    await admin.from("matches").update({ state: "suggested" }).eq("id", claim.match_id);
+    return NextResponse.json({
+      verified: false,
+      per_question: grading.per_question,
+      // This attempt has just been spent, so subtract it from the count read
+      // before grading.
+      attempts_remaining: Math.max(0, MAX_VERIFICATION_ATTEMPTS - ((spentAttempts ?? 0) + 1)),
+    });
   }
 
   await admin.from("matches").update({ state: "verified" }).eq("id", claim.match_id);
+
+  // Both sides, not just the found item. Leaving the lost report 'open' keeps
+  // it on the map as still-missing and keeps find_candidates scanning it
+  // against every new found report — costing a rerank call per arrival for an
+  // item that is already back with its owner.
   await admin
     .from("reports")
     .update({ status: "resolved" })
-    .in("id", [match.found_report_id]);
+    .in("id", [match.lost_report_id, match.found_report_id]);
+
+  // Any other pending suggestion touching either report is now moot.
+  await admin
+    .from("matches")
+    .update({ state: "rejected" })
+    .neq("id", claim.match_id)
+    .in("state", ["suggested", "claim_requested"])
+    .or(
+      `lost_report_id.in.(${match.lost_report_id},${match.found_report_id}),` +
+        `found_report_id.in.(${match.lost_report_id},${match.found_report_id})`,
+    );
 
   const { data: foundReport } = await admin
     .from("reports")
