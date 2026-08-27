@@ -49,7 +49,15 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Could not load claim");
         setData(json);
-        setVerified(json.claim.state === "verified");
+        // Mirrors `claimIsLive` in GET /api/claims/[id]. With verification
+        // switched off a claim is settled the moment it's opened, so gating
+        // on state === 'verified' would leave every claim showing its header
+        // and nothing else — no chat, no handover, forever.
+        setVerified(
+          VERIFICATION_ENABLED
+            ? json.claim.state === "verified"
+            : json.claim.state !== "rejected",
+        );
         if (json.pickupLocation) setPickupLocation(json.pickupLocation);
       })
       .catch((err) => setLoadError((err as Error).message));
