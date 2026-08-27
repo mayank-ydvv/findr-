@@ -12,6 +12,7 @@ interface ClaimData {
     id: string;
     state: "pending" | "verified" | "rejected";
     isClaimant: boolean;
+    isHolder: boolean;
   };
   questions: { question: string }[];
   lostReport: { category: string | null; primary_color: string | null } | null;
@@ -133,7 +134,8 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
 
           <HandoverPanel
             claimId={claimId}
-            viewerIsHolder={!data.claim.isClaimant}
+            canHandIn={data.claim.isHolder}
+            canCollect={data.claim.isClaimant}
             initial={data.handover}
           />
           <div className="h-96">

@@ -37,12 +37,15 @@ async function postJson(url: string, body?: unknown): Promise<Record<string, unk
 
 export default function HandoverPanel({
   claimId,
-  viewerIsHolder,
+  canHandIn,
+  canCollect,
   initial,
 }: {
   claimId: string;
-  /** True when the viewer is the finder currently holding the item. */
-  viewerIsHolder: boolean;
+  /** Viewer is the finder holding the item, so may hand it in. */
+  canHandIn: boolean;
+  /** Viewer is the owner claiming it, so may confirm collection. */
+  canCollect: boolean;
   initial: HandoverState;
 }) {
   const [state, setState] = useState<HandoverState>(initial);
@@ -127,7 +130,7 @@ export default function HandoverPanel({
       <div className="space-y-3 rounded-lg border border-accent/40 bg-accent/10 p-4">
         <p className="flex items-center gap-2 font-medium text-accent-hover">
           <PackageCheck className="h-4 w-4" aria-hidden />
-          {viewerIsHolder ? "You handed this in" : "Ready to collect"}
+          {canCollect && !canHandIn ? "Ready to collect" : "You handed this in"}
         </p>
 
         <div className="rounded-md border border-line bg-surface p-3">
@@ -139,7 +142,7 @@ export default function HandoverPanel({
           </p>
         </div>
 
-        {viewerIsHolder ? (
+        {canHandIn && !canCollect ? (
           <p className="text-sm text-fg-muted">
             The owner has been told where to collect it. Nothing else for you to do — thanks for
             handing it in.
@@ -167,7 +170,7 @@ export default function HandoverPanel({
   }
 
   // Not handed in yet.
-  if (!viewerIsHolder) {
+  if (!canHandIn) {
     return (
       <div className="rounded-lg border border-line bg-surface p-4">
         <p className="font-medium text-fg">Waiting for hand-in</p>

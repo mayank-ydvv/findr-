@@ -6,6 +6,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { MessagesSquare, ChevronLeft, ImageOff } from "lucide-react";
 import AnonChat from "./AnonChat";
 import type { ChatThread } from "@/app/api/claims/threads/route";
+import HandoverPanel from "@/components/claim/HandoverPanel";
 import { VERIFICATION_ENABLED } from "@/lib/scoring";
 
 function timeAgo(iso: string | null): string {
@@ -110,14 +111,24 @@ export default function ChatPanel({ userId }: { userId: string }) {
               animate={{ opacity: 1, x: 0 }}
               exit={reduced ? { opacity: 0 } : { opacity: 0, x: 12 }}
               transition={{ duration: 0.18 }}
-              className="h-full"
+              className="flex h-full min-h-0 flex-col"
             >
-              <AnonChat
-                claimId={open.claimId}
-                userId={userId}
-                viewerIsHolder={open.viewerIsHolder}
-                claimState={open.state}
-              />
+              <div className="shrink-0 overflow-y-auto p-3">
+                <HandoverPanel
+                  claimId={open.claimId}
+                  canHandIn={open.viewerIsHolder}
+                  canCollect={open.viewerIsClaimant}
+                  initial={open.handover}
+                />
+              </div>
+              <div className="min-h-0 flex-1">
+                <AnonChat
+                  claimId={open.claimId}
+                  userId={userId}
+                  viewerIsHolder={open.viewerIsHolder}
+                  claimState={open.state}
+                />
+              </div>
             </motion.div>
           ) : (
             <motion.div

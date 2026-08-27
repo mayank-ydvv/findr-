@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { DropoffPointId } from "@/lib/dropoffPoints";
 
 export interface ChatThread {
   claimId: string;
@@ -8,6 +9,14 @@ export interface ChatThread {
   state: "pending" | "verified" | "rejected";
   /** True when the viewer is the finder holding the item. */
   viewerIsHolder: boolean;
+  /** True when the viewer is the one claiming it. Both can hold at once when
+   * the same person reported each side of a match. */
+  viewerIsClaimant: boolean;
+  handover: {
+    dropoff_point: DropoffPointId | null;
+    dropped_off_at: string | null;
+    collected_at: string | null;
+  };
   itemLabel: string;
   photoUrl: string | null;
   lastMessage: string | null;
@@ -35,7 +44,9 @@ export async function GET() {
 
   const { data: claims } = await admin
     .from("claims")
-    .select("id, match_id, claimant_id, holder_id, state, created_at")
+    .select(
+      "id, match_id, claimant_id, holder_id, state, created_at, dropoff_point, dropped_off_at, collected_at",
+    )
     .or(`claimant_id.eq.${user.id},holder_id.eq.${user.id}`)
     .order("created_at", { ascending: false });
 
@@ -83,6 +94,12 @@ export async function GET() {
       matchId: c.match_id,
       state: c.state,
       viewerIsHolder: c.holder_id === user.id,
+      viewerIsClaimant: c.claimant_id === user.id,
+      handover: {
+        dropoff_point: c.dropoff_point ?? null,
+        dropped_off_at: c.dropped_off_at ?? null,
+        collected_at: c.collected_at ?? null,
+      },
       itemLabel:
         [found?.primary_color, found?.category].filter(Boolean).join(" ") || "Item",
       photoUrl: found?.photo_path

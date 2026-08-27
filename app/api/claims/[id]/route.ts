@@ -99,6 +99,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       created_at: claim.created_at,
       verified_at: claim.verified_at,
       isClaimant: claim.claimant_id === user.id,
+      isHolder: claim.holder_id === user.id,
     },
     handover: {
       dropoff_point: claim.dropoff_point ?? null,
