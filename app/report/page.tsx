@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { downscaleImage } from "@/lib/downscaleImage";
 import PhotoUpload from "@/components/report/PhotoUpload";
+import MyReports from "@/components/report/MyReports";
 import LocationPicker, { type LatLng } from "@/components/report/LocationPicker";
 import AnalysisProgress from "@/components/report/AnalysisProgress";
 import ZoneChip from "@/components/map/ZoneChip";
@@ -24,6 +25,7 @@ export default function ReportPage() {
   const [checkingAuth, setCheckingAuth] = useState(supabaseReady);
   const [signedIn, setSignedIn] = useState(false);
 
+  const [tab, setTab] = useState<"new" | "mine">("new");
   const [kind, setKind] = useState<Kind>("lost");
   const [photo, setPhoto] = useState<File | null>(null);
   const [description, setDescription] = useState("");
@@ -117,9 +119,47 @@ export default function ReportPage() {
     );
   }
 
+  const tabs = (
+    <div
+      role="tablist"
+      aria-label="Report sections"
+      className="flex items-center gap-1 rounded-full border border-line bg-surface p-1"
+    >
+      {(
+        [
+          ["new", "Report an item"],
+          ["mine", "My reports"],
+        ] as const
+      ).map(([id, label]) => (
+        <button
+          key={id}
+          role="tab"
+          type="button"
+          aria-selected={tab === id}
+          onClick={() => setTab(id)}
+          className={`flex-1 cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-200 ${
+            tab === id ? "bg-fg text-bg" : "text-fg-muted hover:text-fg"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (tab === "mine") {
+    return (
+      <div className="mx-auto w-full max-w-lg space-y-5 p-6">
+        {tabs}
+        <MyReports />
+      </div>
+    );
+  }
+
   if (result) {
     return (
       <div className="mx-auto w-full max-w-lg space-y-4 p-6">
+        {tabs}
         <div className="rounded-lg border border-found/40 bg-found-soft p-5">
           <h2 className="text-lg font-semibold text-fg">Report submitted</h2>
           <p className="mt-1 text-sm text-fg-muted">
@@ -158,6 +198,8 @@ export default function ReportPage() {
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto w-full max-w-lg space-y-5 p-6">
+      {tabs}
+
       <div>
         <h1 className="text-xl font-semibold text-fg">Report an item</h1>
         <p className="mt-1 text-sm text-fg-muted">
