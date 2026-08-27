@@ -28,7 +28,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const { data: claim, error: claimError } = await admin
     .from("claims")
-    .select("id, claimant_id, holder_id, state, match_id, created_at, verified_at")
+    .select(
+      "id, claimant_id, holder_id, state, match_id, created_at, verified_at, dropoff_point, dropped_off_at, collected_at",
+    )
     .eq("id", claimId)
     .single();
 
@@ -81,7 +83,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const claimIsLive = VERIFICATION_ENABLED
     ? claim.state === "verified"
     : claim.state !== "rejected";
-  if (claimIsLive && match?.found_report_id) {
+  if (claimIsLive && !claim.dropped_off_at && match?.found_report_id) {
     const { data: exact } = await admin
       .from("reports")
       .select("exact_lat, exact_lng")
@@ -97,6 +99,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       created_at: claim.created_at,
       verified_at: claim.verified_at,
       isClaimant: claim.claimant_id === user.id,
+    },
+    handover: {
+      dropoff_point: claim.dropoff_point ?? null,
+      dropped_off_at: claim.dropped_off_at ?? null,
+      collected_at: claim.collected_at ?? null,
     },
     questions,
     lostReport,

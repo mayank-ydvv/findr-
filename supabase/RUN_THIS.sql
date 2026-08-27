@@ -65,4 +65,46 @@ create policy "claim participants can send messages"
   );
 
 
+-- 4. Handover through a staffed desk -------------------------
+-- The finder leaves the item with a guard at one of two desks instead of
+-- meeting the owner; the owner then collects it from there. Without this
+-- section the drop-off panel on a claim fails to save.
+
+alter table claims
+  add column if not exists dropoff_point text
+    check (dropoff_point in ('university_ground', 'techpark_desk')),
+  add column if not exists dropped_off_at timestamptz,
+  add column if not exists collected_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'claims_handover_order'
+  ) then
+    alter table claims add constraint claims_handover_order check (
+      (dropped_off_at is null) = (dropoff_point is null)
+      and (collected_at is null or dropped_off_at is not null)
+    );
+  end if;
+end $$;
+
+create index if not exists claims_awaiting_collection_idx
+  on claims (dropoff_point)
+  where dropped_off_at is not null and collected_at is null;
+
+-- Realtime on claims, so the owner is told the item has been handed in
+-- without refreshing. RLS on claims is already participant-scoped.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'claims'
+  ) then
+    alter publication supabase_realtime add table claims;
+  end if;
+end $$;
+
+
 -- Done. Expected result: "Success. No rows returned."

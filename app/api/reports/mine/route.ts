@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { ClaimState, MatchState, ReportKind, ReportStatus } from "@/lib/types";
+import type { DropoffPointId } from "@/lib/dropoffPoints";
 
 /** One of the viewer's own reports, plus whatever has happened to it since. */
 export interface MyReport {
@@ -30,6 +31,10 @@ export interface MyReport {
     state: ClaimState;
     /** True when the viewer holds the item and someone else is claiming it. */
     viewerIsHolder: boolean;
+    /** Where the item was handed in, once the finder has done so. */
+    dropoffPoint: DropoffPointId | null;
+    droppedOffAt: string | null;
+    collectedAt: string | null;
   } | null;
 }
 
@@ -101,6 +106,9 @@ export async function GET() {
     claimant_id: string;
     holder_id: string;
     state: ClaimState;
+    dropoff_point: DropoffPointId | null;
+    dropped_off_at: string | null;
+    collected_at: string | null;
   }
 
   // Claims hang off matches, so they're only reachable once the match ids are
@@ -108,7 +116,9 @@ export async function GET() {
   const { data: claims } = liveMatches.length
     ? await supabase
         .from("claims")
-        .select("id, match_id, claimant_id, holder_id, state")
+        .select(
+          "id, match_id, claimant_id, holder_id, state, dropoff_point, dropped_off_at, collected_at",
+        )
         .in(
           "match_id",
           liveMatches.map((m) => m.id),
@@ -171,7 +181,14 @@ export async function GET() {
       topMatchId: top?.id ?? null,
       counterpartPhotoUrl: counterpartId ? publicUrl(counterpartPhoto.get(counterpartId)) : null,
       claim: claim
-        ? { id: claim.id, state: claim.state, viewerIsHolder: claim.holder_id === user.id }
+        ? {
+            id: claim.id,
+            state: claim.state,
+            viewerIsHolder: claim.holder_id === user.id,
+            dropoffPoint: claim.dropoff_point,
+            droppedOffAt: claim.dropped_off_at,
+            collectedAt: claim.collected_at,
+          }
         : null,
     };
   });

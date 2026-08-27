@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import VerificationForm from "@/components/claim/VerificationForm";
 import { VERIFICATION_ENABLED } from "@/lib/scoring";
 import AnonChat from "@/components/claim/AnonChat";
+import HandoverPanel, { type HandoverState } from "@/components/claim/HandoverPanel";
 
 interface ClaimData {
   claim: {
@@ -16,6 +17,7 @@ interface ClaimData {
   lostReport: { category: string | null; primary_color: string | null } | null;
   foundReport: { category: string | null; primary_color: string | null } | null;
   pickupLocation: { lat: number; lng: number } | null;
+  handover: HandoverState;
 }
 
 export default function ClaimPage({ params }: { params: Promise<{ id: string }> }) {
@@ -116,11 +118,16 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
             </p>
             {pickupLocation && (
               <p className="mt-1 text-sm text-fg-muted">
-                Exact pickup location: {pickupLocation.lat.toFixed(5)},{" "}
-                {pickupLocation.lng.toFixed(5)}
+                Found near: {pickupLocation.lat.toFixed(5)}, {pickupLocation.lng.toFixed(5)}
               </p>
             )}
           </div>
+
+          <HandoverPanel
+            claimId={claimId}
+            viewerIsHolder={!data.claim.isClaimant}
+            initial={data.handover}
+          />
           <div className="h-96">
             <AnonChat
               claimId={claimId}

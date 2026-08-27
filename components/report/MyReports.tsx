@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ImageOff, MapPin, Search, ShieldCheck, Clock, Inbox } from "lucide-react";
 import type { MyReport } from "@/app/api/reports/mine/route";
+import { dropoffLabel, dropoffPointById } from "@/lib/dropoffPoints";
 
 function timeAgo(iso: string): string {
   const minutes = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
@@ -31,13 +32,35 @@ function outcomeOf(r: MyReport): Outcome {
   const isLost = r.kind === "lost";
 
   if (r.claim) {
+    // Handover outranks claim state: once an item is physically at a desk,
+    // "go and collect it" is the only thing either side needs to read.
+    if (r.claim.collectedAt) {
+      return {
+        tone: "settled",
+        label: "Collected",
+        detail: "This one's closed — the item is back with its owner.",
+        href: `/claim/${r.claim.id}`,
+      };
+    }
+    if (r.claim.droppedOffAt) {
+      const point = dropoffPointById(r.claim.dropoffPoint);
+      const where = point ? dropoffLabel(point) : "the collection desk";
+      return {
+        tone: "settled",
+        label: r.claim.viewerIsHolder ? "Handed in" : "Ready to collect",
+        detail: r.claim.viewerIsHolder
+          ? `You left it at ${where}. The owner has been told where to collect it.`
+          : `Waiting for you at ${where}. Ask the guard on the desk.`,
+        href: `/claim/${r.claim.id}`,
+      };
+    }
     if (r.claim.state === "verified") {
       return {
         tone: "settled",
         label: isLost ? "It's yours — verified" : "Owner verified",
         detail: isLost
-          ? "You passed the ownership check. Arrange the handover in your thread."
-          : "They answered the ownership questions correctly. Arrange the handover.",
+          ? "Ownership confirmed. The finder is handing it in at a collection desk."
+          : "Ownership confirmed. Hand it in at a collection desk so they can pick it up.",
         href: "/matches",
       };
     }
