@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { downscaleImage } from "@/lib/downscaleImage";
 import PhotoUpload from "@/components/report/PhotoUpload";
 import LocationPicker, { type LatLng } from "@/components/report/LocationPicker";
 import AnalysisProgress from "@/components/report/AnalysisProgress";
@@ -58,18 +59,36 @@ export default function ReportPage() {
     }
 
     setSubmitting(true);
-    const form = new FormData();
-    form.set("kind", kind);
-    form.set("user_description", description);
-    form.set("lat", String(location.lat));
-    form.set("lng", String(location.lng));
-    if (photo) form.set("photo", photo);
 
     try {
+      const form = new FormData();
+      form.set("kind", kind);
+      form.set("user_description", description);
+      form.set("lat", String(location.lat));
+      form.set("lng", String(location.lng));
+      // Shrunk in the browser: a straight-from-the-camera photo exceeds
+      // Vercel's 4.5 MB request-body cap on its own. See lib/downscaleImage.
+      if (photo) form.set("photo", await downscaleImage(photo));
+
       const res = await fetch("/api/reports", { method: "POST", body: form });
-      const json = await res.json();
+
+      // Not every failure comes back as JSON. A 413 is produced by Vercel's
+      // edge before the route runs and its body is plain text, so parsing
+      // unconditionally turns a clear "too large" into "Unexpected token 'R'".
+      const raw = await res.text();
+      let json: { error?: string } & Record<string, unknown>;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        throw new Error(
+          res.status === 413
+            ? "That photo is too large to upload. Try a smaller one."
+            : `Upload failed (${res.status}). Please try again.`,
+        );
+      }
+
       if (!res.ok) throw new Error(json.error ?? "Something went wrong");
-      setResult(json);
+      setResult(json as unknown as SubmitResult);
     } catch (err) {
       setError((err as Error).message);
     } finally {
